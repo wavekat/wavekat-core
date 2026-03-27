@@ -19,9 +19,8 @@ Shared types for the WaveKat audio processing ecosystem.
 
 ## Quick Start
 
-```toml
-[dependencies]
-wavekat-core = "0.0.1"
+```sh
+cargo add wavekat-core
 ```
 
 ```rust
