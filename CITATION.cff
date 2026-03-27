@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: wavekat-core
+abstract: Shared types for the WaveKat audio processing ecosystem.
+type: software
+authors:
+  - given-names: Yishi
+    family-names: Guo
+    alias: Eason
+    email: eason@wavekat.com
+repository-code: https://github.com/wavekat/wavekat-core
+license: Apache-2.0
