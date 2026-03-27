@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="https://github.com/wavekat/wavekat-brand/raw/main/assets/banners/wavekat-core-narrow.svg" alt="WaveKat Core">
+  <a href="https://github.com/wavekat/wavekat-core">
+    <img src="https://github.com/wavekat/wavekat-brand/raw/main/assets/banners/wavekat-core-narrow.svg" alt="WaveKat Core">
+  </a>
 </p>
 
 [![Crates.io](https://img.shields.io/crates/v/wavekat-core.svg)](https://crates.io/crates/wavekat-core)
