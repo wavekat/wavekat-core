@@ -1,0 +1,16 @@
+[package]
+name = "wavekat-core"
+description = "Shared types for the WaveKat audio processing ecosystem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords = ["audio", "voice", "telephony", "wavekat"]
+categories = ["multimedia::audio"]
+
+[dependencies]
+
+[dev-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
