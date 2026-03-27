@@ -10,6 +10,7 @@ documentation = "https://docs.rs/wavekat-core"
 readme = "../../README.md"
 keywords = ["audio", "voice", "telephony", "wavekat"]
 categories = ["multimedia::audio"]
+exclude = ["CHANGELOG.md"]
 
 [dependencies]
 
