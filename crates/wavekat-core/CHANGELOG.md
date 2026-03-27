@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2](https://github.com/wavekat/wavekat-core/compare/v0.0.1...v0.0.2) - 2026-03-27
+
+### Fixed
+
+- prevent release-plz bump loop ([#4](https://github.com/wavekat/wavekat-core/pull/4))
+
+### Other
+
+- use cargo add in readme ([#6](https://github.com/wavekat/wavekat-core/pull/6))
+- release v0.0.1 ([#2](https://github.com/wavekat/wavekat-core/pull/2))
+
 ## [0.0.1](https://github.com/wavekat/wavekat-core/releases/tag/v0.0.1) - 2026-03-27
 
 ### Added
