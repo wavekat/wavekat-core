@@ -25,6 +25,8 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   release-plz-pr:
+    needs: release-plz-release
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: write
