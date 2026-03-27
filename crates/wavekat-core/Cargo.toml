@@ -4,6 +4,10 @@ description = "Shared types for the WaveKat audio processing ecosystem"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository = "https://github.com/wavekat/wavekat-core"
+homepage = "https://github.com/wavekat/wavekat-core"
+documentation = "https://docs.rs/wavekat-core"
+readme = "../../README.md"
 keywords = ["audio", "voice", "telephony", "wavekat"]
 categories = ["multimedia::audio"]
 
