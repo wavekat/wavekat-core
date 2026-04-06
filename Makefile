@@ -43,7 +43,7 @@ cov:
 
 # Print uncovered lines only (paste into Claude Code to write tests)
 cov-report:
-	cargo llvm-cov --all-features --text 2>/dev/null | grep -E '\|[[:space:]]+0\|'
+	@cargo llvm-cov --all-features --text 2>/dev/null | grep -E '\|[[:space:]]+0\|' || echo "No uncovered lines."
 
 # Run all CI checks locally (mirrors .github/workflows/ci.yml)
 ci:
