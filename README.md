@@ -17,7 +17,7 @@ Shared types for the WaveKat audio processing ecosystem.
 
 | Type | Description |
 |------|-------------|
-| `AudioFrame` | Audio samples with sample rate, accepts both `i16` and `f32` |
+| `AudioFrame` | Audio samples with sample rate, accepts `i16` and `f32` in slice, Vec, or array form |
 | `IntoSamples` | Trait for transparent sample format conversion |
 
 ## Quick Start
@@ -29,15 +29,24 @@ cargo add wavekat-core
 ```rust
 use wavekat_core::AudioFrame;
 
-// From f32 — zero-copy
+// From f32 — zero-copy (slice, &Vec<f32>, or array)
 let frame = AudioFrame::new(&f32_samples, 16000);
 
-// From i16 — normalizes to f32 automatically
+// From i16 — normalizes to f32 [-1.0, 1.0] automatically
 let frame = AudioFrame::new(&i16_samples, 16000);
 
-// Same API regardless of input format
+// From an owned Vec — zero-copy, produces AudioFrame<'static>
+let frame = AudioFrame::from_vec(vec![0.0f32; 160], 16000);
+
+// Inspect the frame
 let samples: &[f32] = frame.samples();
 let rate: u32 = frame.sample_rate();
+let n: usize = frame.len();
+let empty: bool = frame.is_empty();
+let secs: f64 = frame.duration_secs();
+
+// Convert a borrowed frame to owned
+let owned: AudioFrame<'static> = frame.into_owned();
 ```
 
 ## Audio Format Standard
@@ -54,6 +63,27 @@ Your audio (any format)
         +---> wavekat-vad
         +---> wavekat-turn
         +---> wavekat-asr (future)
+```
+
+## Optional Features
+
+### `wav`
+
+Adds WAV file I/O via [`hound`](https://crates.io/crates/hound).
+
+```sh
+cargo add wavekat-core --features wav
+```
+
+```rust
+use wavekat_core::AudioFrame;
+
+// Read a WAV file (f32 or i16, normalized automatically)
+let frame = AudioFrame::from_wav("input.wav")?;
+println!("{} Hz, {} samples", frame.sample_rate(), frame.len());
+
+// Write a frame to a WAV file (mono f32 PCM)
+frame.write_wav("output.wav")?;
 ```
 
 ## License
