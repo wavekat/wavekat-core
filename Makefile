@@ -1,4 +1,4 @@
-.PHONY: help check test fmt lint doc ci cov cov-report install-dev
+.PHONY: help check test fmt lint doc ci cov cov-report cov-regions install-dev
 
 help:
 	@echo "Available targets:"
@@ -8,7 +8,8 @@ help:
 	@echo "  lint         Run clippy with warnings as errors"
 	@echo "  doc          Build and open docs in browser"
 	@echo "  cov          Generate HTML coverage report and open it"
-	@echo "  cov-report   Print coverage summary as text (paste into Claude Code)"
+	@echo "  cov-report   Print uncovered lines"
+	@echo "  cov-regions  Print uncovered regions with context"
 	@echo "  ci           Run all CI checks locally (fmt, clippy, test, doc)"
 	@echo "  install-dev  Install local dev tools (cargo-llvm-cov)"
 
@@ -44,6 +45,10 @@ cov:
 # Print uncovered lines only (paste into Claude Code to write tests)
 cov-report:
 	@cargo llvm-cov --all-features --text 2>/dev/null | grep -E '\|[[:space:]]+0\|' || echo "No uncovered lines."
+
+# Print uncovered regions with source context (paste into Claude Code to write tests)
+cov-regions:
+	@cargo llvm-cov --all-features --text 2>/dev/null | grep -B1 '\^0' || echo "No uncovered regions."
 
 # Run all CI checks locally (mirrors .github/workflows/ci.yml)
 ci:
