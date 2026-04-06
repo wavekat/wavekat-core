@@ -264,6 +264,34 @@ mod tests {
 
     #[cfg(feature = "wav")]
     #[test]
+    fn wav_read_i16() {
+        // Write an i16 WAV directly via hound, then read it with from_wav.
+        let path = std::env::temp_dir().join("wavekat_test_i16.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let i16_samples: &[i16] = &[0, i16::MAX, i16::MIN, 16384];
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        for &s in i16_samples {
+            writer.write_sample(s).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let frame = AudioFrame::from_wav(&path).unwrap();
+        assert_eq!(frame.sample_rate(), 16000);
+        assert_eq!(frame.len(), 4);
+        let s = frame.samples();
+        assert!((s[0] - 0.0).abs() < 1e-6);
+        assert!((s[1] - (i16::MAX as f32 / 32768.0)).abs() < 1e-6);
+        assert!((s[2] - -1.0).abs() < 1e-6);
+        assert!((s[3] - 0.5).abs() < 1e-4);
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
     fn wav_round_trip() {
         let original = AudioFrame::from_vec(vec![0.5f32, -0.5, 0.0, 1.0], 16000);
         let path = std::env::temp_dir().join("wavekat_test.wav");
