@@ -61,5 +61,5 @@ jobs:
         run: |
           echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cargo llvm-cov report --text --summary-only 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+          cargo llvm-cov report --text 2>/dev/null | grep '^TOTAL' >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
