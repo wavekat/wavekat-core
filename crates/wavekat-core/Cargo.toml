@@ -12,7 +12,11 @@ keywords = ["audio", "voice", "telephony", "wavekat"]
 categories = ["multimedia::audio"]
 exclude = ["CHANGELOG.md"]
 
+[features]
+wav = ["dep:hound"]
+
 [dependencies]
+hound = { version = "3.5", optional = true }
 
 [dev-dependencies]
 
