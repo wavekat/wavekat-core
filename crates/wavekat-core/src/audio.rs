@@ -311,4 +311,42 @@ mod tests {
         assert_eq!(frame.samples().as_ptr(), ptr);
         assert_eq!(frame.sample_rate(), 24000);
     }
+
+    #[test]
+    fn into_samples_vec_f32() {
+        let samples = vec![0.1f32, -0.2, 0.3];
+        let frame = AudioFrame::new(&samples, 16000);
+        assert!(matches!(frame.samples, Cow::Borrowed(_)));
+        assert_eq!(frame.samples(), &[0.1, -0.2, 0.3]);
+    }
+
+    #[test]
+    fn into_samples_array_f32() {
+        let samples = [0.1f32, -0.2, 0.3];
+        let frame = AudioFrame::new(&samples, 16000);
+        assert!(matches!(frame.samples, Cow::Borrowed(_)));
+        assert_eq!(frame.samples(), &[0.1, -0.2, 0.3]);
+    }
+
+    #[test]
+    fn into_samples_vec_i16() {
+        let samples: Vec<i16> = vec![0, 16384, i16::MIN];
+        let frame = AudioFrame::new(&samples, 16000);
+        assert!(matches!(frame.samples, Cow::Owned(_)));
+        let s = frame.samples();
+        assert!((s[0] - 0.0).abs() < f32::EPSILON);
+        assert!((s[1] - 0.5).abs() < 0.001);
+        assert!((s[2] - -1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn into_samples_array_i16() {
+        let samples: [i16; 3] = [0, 16384, i16::MIN];
+        let frame = AudioFrame::new(&samples, 16000);
+        assert!(matches!(frame.samples, Cow::Owned(_)));
+        let s = frame.samples();
+        assert!((s[0] - 0.0).abs() < f32::EPSILON);
+        assert!((s[1] - 0.5).abs() < 0.001);
+        assert!((s[2] - -1.0).abs() < f32::EPSILON);
+    }
 }
