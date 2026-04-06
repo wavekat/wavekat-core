@@ -99,6 +99,65 @@ impl AudioFrame<'static> {
     }
 }
 
+#[cfg(feature = "wav")]
+impl AudioFrame<'_> {
+    /// Write this frame to a WAV file at `path`.
+    ///
+    /// Always writes mono f32 PCM at the frame's native sample rate.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use wavekat_core::AudioFrame;
+    ///
+    /// let frame = AudioFrame::from_vec(vec![0.0f32; 16000], 16000);
+    /// frame.write_wav("output.wav").unwrap();
+    /// ```
+    pub fn write_wav(&self, path: impl AsRef<std::path::Path>) -> Result<(), hound::Error> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: self.sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec)?;
+        for &sample in self.samples() {
+            writer.write_sample(sample)?;
+        }
+        writer.finalize()
+    }
+}
+
+#[cfg(feature = "wav")]
+impl AudioFrame<'static> {
+    /// Read a mono WAV file and return an owned `AudioFrame`.
+    ///
+    /// Accepts both f32 and i16 WAV files. i16 samples are normalised to
+    /// `[-1.0, 1.0]` (divided by 32768).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use wavekat_core::AudioFrame;
+    ///
+    /// let frame = AudioFrame::from_wav("input.wav").unwrap();
+    /// println!("{} Hz, {} samples", frame.sample_rate(), frame.len());
+    /// ```
+    pub fn from_wav(path: impl AsRef<std::path::Path>) -> Result<Self, hound::Error> {
+        let mut reader = hound::WavReader::open(path)?;
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate;
+        let samples: Vec<f32> = match spec.sample_format {
+            hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>()?,
+            hound::SampleFormat::Int => reader
+                .samples::<i16>()
+                .map(|s| s.map(|v| v as f32 / 32768.0))
+                .collect::<Result<_, _>>()?,
+        };
+        Ok(AudioFrame::from_vec(samples, sample_rate))
+    }
+}
+
 /// Trait for types that can be converted into audio samples.
 ///
 /// Implemented for `&[f32]` (zero-copy) and `&[i16]` (normalized conversion).
@@ -201,6 +260,19 @@ mod tests {
         let owned: AudioFrame<'static> = frame.into_owned();
         assert_eq!(owned.samples(), &[0.5, -0.5]);
         assert_eq!(owned.sample_rate(), 16000);
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn wav_round_trip() {
+        let original = AudioFrame::from_vec(vec![0.5f32, -0.5, 0.0, 1.0], 16000);
+        let path = std::env::temp_dir().join("wavekat_test.wav");
+        original.write_wav(&path).unwrap();
+        let loaded = AudioFrame::from_wav(&path).unwrap();
+        assert_eq!(loaded.sample_rate(), 16000);
+        for (a, b) in original.samples().iter().zip(loaded.samples()) {
+            assert!((a - b).abs() < 1e-6, "sample mismatch: {a} vs {b}");
+        }
     }
 
     #[test]
