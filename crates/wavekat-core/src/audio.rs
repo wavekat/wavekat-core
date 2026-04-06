@@ -75,6 +75,30 @@ impl<'a> AudioFrame<'a> {
     }
 }
 
+impl AudioFrame<'static> {
+    /// Construct an owned frame directly from a `Vec<f32>`.
+    ///
+    /// Zero-copy — wraps the vec as `Cow::Owned` without cloning.
+    /// Intended for audio producers (TTS, ASR) that generate owned data.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use wavekat_core::AudioFrame;
+    ///
+    /// let samples = vec![0.5f32, -0.5, 0.3];
+    /// let frame = AudioFrame::from_vec(samples, 24000);
+    /// assert_eq!(frame.sample_rate(), 24000);
+    /// assert_eq!(frame.len(), 3);
+    /// ```
+    pub fn from_vec(samples: Vec<f32>, sample_rate: u32) -> Self {
+        Self {
+            samples: Cow::Owned(samples),
+            sample_rate,
+        }
+    }
+}
+
 /// Trait for types that can be converted into audio samples.
 ///
 /// Implemented for `&[f32]` (zero-copy) and `&[i16]` (normalized conversion).
@@ -177,5 +201,14 @@ mod tests {
         let owned: AudioFrame<'static> = frame.into_owned();
         assert_eq!(owned.samples(), &[0.5, -0.5]);
         assert_eq!(owned.sample_rate(), 16000);
+    }
+
+    #[test]
+    fn from_vec_is_zero_copy() {
+        let samples = vec![0.5f32, -0.5];
+        let ptr = samples.as_ptr();
+        let frame = AudioFrame::from_vec(samples, 24000);
+        assert_eq!(frame.samples().as_ptr(), ptr);
+        assert_eq!(frame.sample_rate(), 24000);
     }
 }
