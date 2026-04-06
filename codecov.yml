@@ -1,0 +1,13 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto   # must not drop below current coverage
+        threshold: 1%  # allow up to 1% drop before failing
+    patch:
+      default:
+        target: 80%    # new code in PRs must be at least 80% covered
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default    # post once, update on new commits

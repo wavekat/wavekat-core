@@ -6,6 +6,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/wavekat-core.svg)](https://crates.io/crates/wavekat-core)
 [![docs.rs](https://docs.rs/wavekat-core/badge.svg)](https://docs.rs/wavekat-core)
+[![codecov](https://codecov.io/gh/wavekat/wavekat-core/branch/main/graph/badge.svg)](https://codecov.io/gh/wavekat/wavekat-core)
 
 Shared types for the WaveKat audio processing ecosystem.
 
