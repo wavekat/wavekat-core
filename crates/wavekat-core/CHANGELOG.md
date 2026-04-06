@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4](https://github.com/wavekat/wavekat-core/compare/v0.0.3...v0.0.4) - 2026-04-06
+
+### Added
+
+- add AudioFrame::from_vec ([#9](https://github.com/wavekat/wavekat-core/pull/9))
+
 ## [0.0.3](https://github.com/wavekat/wavekat-core/compare/v0.0.2...v0.0.3) - 2026-03-27
 
 ### Other
