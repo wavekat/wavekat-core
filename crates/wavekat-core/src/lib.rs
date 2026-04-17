@@ -25,5 +25,7 @@
 //! ```
 
 mod audio;
+mod error;
 
 pub use audio::{AudioFrame, IntoSamples};
+pub use error::CoreError;

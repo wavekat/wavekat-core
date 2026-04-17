@@ -36,6 +36,19 @@ The WaveKat ecosystem standardizes on:
 
 `AudioFrame` accepts both `&[i16]` and `&[f32]` input transparently. The conversion happens once at construction. Downstream crates receive `&[f32]` from `frame.samples()`.
 
+## Error Handling
+
+`CoreError` is the unified error type for all fallible operations in `wavekat-core`.
+
+| Variant | Wraps | When |
+|---|---|---|
+| `Io(std::io::Error)` | I/O errors | File/stream failures |
+| `Audio(String)` | Format/codec errors | WAV encoding/decoding issues |
+
+- Manually implements `Display`, `Error`, and `From<std::io::Error>` — no `thiserror` dependency.
+- `From<hound::Error>` is gated behind `#[cfg(feature = "wav")]`: I/O errors map to `Io`, everything else maps to `Audio(msg)`.
+- Downstream crates can add `From<CoreError> for TheirError` to make `?` work naturally.
+
 ## Repository Structure
 
 ```
@@ -45,7 +58,8 @@ wavekat-core/
 │   └── wavekat-core/           # library crate
 │       ├── src/
 │       │   ├── lib.rs          # public API, re-exports
-│       │   └── audio.rs        # AudioFrame, IntoSamples
+│       │   ├── audio.rs        # AudioFrame, IntoSamples
+│       │   └── error.rs        # CoreError
 │       └── Cargo.toml
 ├── LICENSE                     # Apache 2.0
 └── CLAUDE.md                   # this file
@@ -58,7 +72,7 @@ wavekat-core/
 - `cargo test` — all tests pass
 - `cargo clippy --workspace -- -D warnings` — no warnings
 - No `unwrap()` in library code
-- Use `thiserror` for error types (only if error types are added)
+- Error types use manual `Display`/`Error` impls (no `thiserror` — keeps zero required deps)
 - `///` doc comments on all public items
 
 ## Conventions
