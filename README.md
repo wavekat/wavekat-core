@@ -86,6 +86,26 @@ println!("{} Hz, {} samples", frame.sample_rate(), frame.len());
 frame.write_wav("output.wav")?;
 ```
 
+### `resample`
+
+Adds sample-rate conversion via [`rubato`](https://crates.io/crates/rubato) (high-quality sinc interpolation).
+
+```sh
+cargo add wavekat-core --features resample
+```
+
+```rust
+use wavekat_core::AudioFrame;
+
+// Resample a 44.1 kHz frame to 24 kHz for TTS
+let frame = AudioFrame::from_vec(samples, 44100);
+let frame = frame.resample(24000)?;
+assert_eq!(frame.sample_rate(), 24000);
+
+// No-op if already at the target rate
+let same = frame.resample(24000)?;
+```
+
 ## License
 
 Licensed under [Apache 2.0](LICENSE).
