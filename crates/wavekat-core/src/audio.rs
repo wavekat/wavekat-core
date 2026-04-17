@@ -113,7 +113,7 @@ impl AudioFrame<'_> {
     /// let frame = AudioFrame::from_vec(vec![0.0f32; 16000], 16000);
     /// frame.write_wav("output.wav").unwrap();
     /// ```
-    pub fn write_wav(&self, path: impl AsRef<std::path::Path>) -> Result<(), hound::Error> {
+    pub fn write_wav(&self, path: impl AsRef<std::path::Path>) -> Result<(), crate::CoreError> {
         let spec = hound::WavSpec {
             channels: 1,
             sample_rate: self.sample_rate,
@@ -124,7 +124,8 @@ impl AudioFrame<'_> {
         for &sample in self.samples() {
             writer.write_sample(sample)?;
         }
-        writer.finalize()
+        writer.finalize()?;
+        Ok(())
     }
 }
 
@@ -143,7 +144,7 @@ impl AudioFrame<'static> {
     /// let frame = AudioFrame::from_wav("input.wav").unwrap();
     /// println!("{} Hz, {} samples", frame.sample_rate(), frame.len());
     /// ```
-    pub fn from_wav(path: impl AsRef<std::path::Path>) -> Result<Self, hound::Error> {
+    pub fn from_wav(path: impl AsRef<std::path::Path>) -> Result<Self, crate::CoreError> {
         let mut reader = hound::WavReader::open(path)?;
         let spec = reader.spec();
         let sample_rate = spec.sample_rate;
