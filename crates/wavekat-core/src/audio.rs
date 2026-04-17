@@ -99,6 +99,77 @@ impl AudioFrame<'static> {
     }
 }
 
+#[cfg(feature = "resample")]
+impl AudioFrame<'_> {
+    /// Resample this frame to a different sample rate.
+    ///
+    /// Returns a new owned `AudioFrame` at `target_rate`. If the frame is
+    /// already at the target rate, returns a clone without touching the
+    /// resampler.
+    ///
+    /// Uses high-quality sinc interpolation via [`rubato`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::Audio`] if the resampler cannot be constructed
+    /// (e.g. zero sample rate) or if processing fails.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use wavekat_core::AudioFrame;
+    ///
+    /// let frame = AudioFrame::from_vec(vec![0.0f32; 4410], 44100);
+    /// let resampled = frame.resample(16000).unwrap();
+    /// assert_eq!(resampled.sample_rate(), 16000);
+    /// ```
+    pub fn resample(&self, target_rate: u32) -> Result<AudioFrame<'static>, crate::CoreError> {
+        use rubato::audioadapter_buffers::direct::InterleavedSlice;
+        use rubato::{
+            Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+            WindowFunction,
+        };
+
+        if self.sample_rate == target_rate {
+            return Ok(self.clone().into_owned());
+        }
+
+        if self.is_empty() {
+            return Ok(AudioFrame::from_vec(Vec::new(), target_rate));
+        }
+
+        let ratio = target_rate as f64 / self.sample_rate as f64;
+        let nbr_input_frames = self.samples.len();
+
+        let params = SincInterpolationParameters {
+            sinc_len: 256,
+            f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Cubic,
+            oversampling_factor: 128,
+            window: WindowFunction::BlackmanHarris2,
+        };
+
+        let mut resampler = Async::<f32>::new_sinc(ratio, 1.0, &params, 1024, 1, FixedAsync::Input)
+            .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+
+        // Allocate output buffer with headroom
+        let out_len = (nbr_input_frames as f64 * ratio) as usize + 1024;
+        let mut outdata = vec![0.0f32; out_len];
+
+        let input_adapter = InterleavedSlice::new(self.samples.as_ref(), 1, nbr_input_frames)
+            .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+        let mut output_adapter = InterleavedSlice::new_mut(&mut outdata, 1, out_len)
+            .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+
+        let (_in_consumed, out_produced) = resampler
+            .process_all_into_buffer(&input_adapter, &mut output_adapter, nbr_input_frames, None)
+            .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+
+        outdata.truncate(out_produced);
+        Ok(AudioFrame::from_vec(outdata, target_rate))
+    }
+}
+
 #[cfg(feature = "wav")]
 impl AudioFrame<'_> {
     /// Write this frame to a WAV file at `path`.
@@ -349,5 +420,89 @@ mod tests {
         assert!((s[0] - 0.0).abs() < f32::EPSILON);
         assert!((s[1] - 0.5).abs() < 0.001);
         assert!((s[2] - -1.0).abs() < f32::EPSILON);
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_noop_same_rate() {
+        let samples = vec![0.1f32, -0.2, 0.3, 0.4, 0.5];
+        let frame = AudioFrame::from_vec(samples.clone(), 16000);
+        let resampled = frame.resample(16000).unwrap();
+        assert_eq!(resampled.sample_rate(), 16000);
+        assert_eq!(resampled.samples(), &samples[..]);
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_empty_frame() {
+        let frame = AudioFrame::from_vec(Vec::new(), 44100);
+        let resampled = frame.resample(16000).unwrap();
+        assert_eq!(resampled.sample_rate(), 16000);
+        assert!(resampled.is_empty());
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_downsample() {
+        // 1 second of silence at 48 kHz → 16 kHz
+        let frame = AudioFrame::from_vec(vec![0.0f32; 48000], 48000);
+        let resampled = frame.resample(16000).unwrap();
+        assert_eq!(resampled.sample_rate(), 16000);
+        // Should produce ~16000 samples (allow small tolerance from resampler)
+        let expected = 16000;
+        let tolerance = 50;
+        assert!(
+            (resampled.len() as i64 - expected as i64).unsigned_abs() < tolerance,
+            "expected ~{expected} samples, got {}",
+            resampled.len()
+        );
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_upsample() {
+        // 1 second at 16 kHz → 24 kHz
+        let frame = AudioFrame::from_vec(vec![0.0f32; 16000], 16000);
+        let resampled = frame.resample(24000).unwrap();
+        assert_eq!(resampled.sample_rate(), 24000);
+        let expected = 24000;
+        let tolerance = 50;
+        assert!(
+            (resampled.len() as i64 - expected as i64).unsigned_abs() < tolerance,
+            "expected ~{expected} samples, got {}",
+            resampled.len()
+        );
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_preserves_sine_frequency() {
+        // Generate a 440 Hz sine at 44100 Hz, resample to 16000 Hz,
+        // then verify the dominant frequency is still ~440 Hz by
+        // checking zero-crossing rate.
+        let sr_in: u32 = 44100;
+        let sr_out: u32 = 16000;
+        let duration_secs = 1.0;
+        let freq = 440.0;
+        let n = (sr_in as f64 * duration_secs) as usize;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / sr_in as f64).sin() as f32)
+            .collect();
+
+        let frame = AudioFrame::from_vec(samples, sr_in);
+        let resampled = frame.resample(sr_out).unwrap();
+
+        // Count zero crossings (sign changes)
+        let s = resampled.samples();
+        let crossings: usize = s
+            .windows(2)
+            .filter(|w| w[0].signum() != w[1].signum())
+            .count();
+        // A pure sine at f Hz has 2*f zero crossings per second
+        let measured_freq = crossings as f64 / (2.0 * duration_secs);
+        assert!(
+            (measured_freq - freq).abs() < 5.0,
+            "expected ~{freq} Hz, measured {measured_freq} Hz"
+        );
     }
 }

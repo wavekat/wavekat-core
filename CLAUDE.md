@@ -12,20 +12,20 @@ Provide the common audio primitives so that all WaveKat crates speak the same la
 - Audio frame representation (`AudioFrame`, `IntoSamples`)
 - Common constants (sample rates, format standards)
 - Shared error types (only when genuinely shared)
+- Format normalisation operations on `AudioFrame` (i16→f32, sample-rate conversion) — gated behind optional features
 
 ## What Does NOT Belong Here
 
 - Backend implementations (VAD models, turn detectors, ASR engines)
-- Processing logic (resampling, filtering, feature extraction)
-- Feature flags that pull heavy dependencies (`ort`, `ndarray`, `rubato`)
+- Domain-specific processing logic (filtering, feature extraction, VAD)
 - Anything specific to a single crate — if only one crate uses it, it stays there
 
 ## Design Principles
 
-1. **Zero dependencies** — this crate must have no external dependencies. It is a leaf.
+1. **Zero required dependencies** — the default build has no external deps. Optional features (e.g. `wav`, `resample`) may pull deps but must be opt-in.
 2. **Tiny surface area** — only add types when there is a concrete need from 2+ crates.
 3. **Stable API** — downstream crates depend on this, so changes here ripple everywhere. Be conservative.
-4. **No feature flags** — keep it simple. If something needs a flag, it probably belongs in a downstream crate.
+4. **Feature flags for heavy deps** — capabilities like WAV I/O (`hound`) and resampling (`rubato`) are gated behind feature flags so the default crate stays lightweight.
 
 ## Audio Format Standard
 
@@ -47,6 +47,7 @@ The WaveKat ecosystem standardizes on:
 
 - Manually implements `Display`, `Error`, and `From<std::io::Error>` — no `thiserror` dependency.
 - `From<hound::Error>` is gated behind `#[cfg(feature = "wav")]`: I/O errors map to `Io`, everything else maps to `Audio(msg)`.
+- Resampling errors (from `rubato`) are mapped to `Audio(msg)` behind `#[cfg(feature = "resample")]`.
 - Downstream crates can add `From<CoreError> for TheirError` to make `?` work naturally.
 
 ## Repository Structure
@@ -58,9 +59,13 @@ wavekat-core/
 │   └── wavekat-core/           # library crate
 │       ├── src/
 │       │   ├── lib.rs          # public API, re-exports
-│       │   ├── audio.rs        # AudioFrame, IntoSamples
+│       │   ├── audio.rs        # AudioFrame, IntoSamples, resample
 │       │   └── error.rs        # CoreError
 │       └── Cargo.toml
+├── docs/                       # design documents
+│   ├── 01-wav-io.md
+│   ├── 02-test-coverage.md
+│   └── 03-resample.md
 ├── LICENSE                     # Apache 2.0
 └── CLAUDE.md                   # this file
 ```
@@ -70,6 +75,7 @@ wavekat-core/
 - `cargo fmt --all --check` — no formatting issues
 - `cargo build` — clean build
 - `cargo test` — all tests pass
+- **All new features and bug fixes must include tests** — no PR should add or change behavior without corresponding test coverage
 - `cargo clippy --workspace -- -D warnings` — no warnings
 - No `unwrap()` in library code
 - Error types use manual `Display`/`Error` impls (no `thiserror` — keeps zero required deps)
