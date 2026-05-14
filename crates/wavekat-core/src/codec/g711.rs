@@ -34,20 +34,22 @@ const QUANT_MASK: u8 = 0x0F;
 const SEG_SHIFT: u8 = 4;
 const SEG_MASK: u8 = 0x70;
 
+// G.711 segment index for `pcm` in `[0, 0x7FFF]`. The segment is the
+// position of the highest set bit above bit 7, clamped to 0 for
+// `pcm < 0x100`. Callers in this file bound their inputs to `≤ 0x7FFF`
+// (μ-law clips to CLIP+BIAS=0x7FFF; A-law masks with 0x7FFF), so we
+// pick the bit-math form that needs no out-of-range fallback.
 #[inline]
-fn seg_for(pcm: i32, seg_end: &[i32; 8]) -> usize {
-    for (i, &end) in seg_end.iter().enumerate() {
-        if pcm <= end {
-            return i;
-        }
+fn seg_for(pcm: i32) -> u32 {
+    if pcm < 0x100 {
+        0
+    } else {
+        31 - (pcm as u32).leading_zeros() - 7
     }
-    seg_end.len()
 }
 
 /// Encode one 16-bit PCM sample to a μ-law byte (G.711U).
 pub fn linear_to_ulaw(pcm: i16) -> u8 {
-    const SEG_END: [i32; 8] = [0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF, 0x3FFF, 0x7FFF];
-
     let mut pcm = pcm as i32;
     let sign = if pcm < 0 {
         pcm = -pcm;
@@ -60,14 +62,10 @@ pub fn linear_to_ulaw(pcm: i16) -> u8 {
     }
     pcm += BIAS;
 
-    let seg = seg_for(pcm, &SEG_END);
-    if seg >= 8 {
-        0x7F ^ sign
-    } else {
-        let mantissa = ((pcm >> (seg + 3)) & 0x0F) as u8;
-        let coded = ((seg as u8) << 4) | mantissa;
-        coded ^ sign
-    }
+    let seg = seg_for(pcm);
+    let mantissa = ((pcm >> (seg + 3)) & 0x0F) as u8;
+    let coded = ((seg as u8) << 4) | mantissa;
+    coded ^ sign
 }
 
 /// Decode one μ-law byte to a 16-bit PCM sample.
@@ -87,26 +85,20 @@ pub fn ulaw_to_linear(ulaw: u8) -> i16 {
 
 /// Encode one 16-bit PCM sample to an A-law byte (G.711A).
 pub fn linear_to_alaw(pcm: i16) -> u8 {
-    const SEG_END: [i32; 8] = [0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF, 0x3FFF, 0x7FFF];
-
     let (pcm, mask) = if pcm >= 0 {
         (pcm as i32, 0xD5u8)
     } else {
         (((!pcm) as i32) & 0x7FFF, 0x55u8)
     };
 
-    let seg = seg_for(pcm, &SEG_END);
-    if seg >= 8 {
-        0x7F ^ mask
+    let seg = seg_for(pcm);
+    let mantissa = if seg < 1 {
+        ((pcm >> 4) & 0x0F) as u8
     } else {
-        let mantissa = if seg < 1 {
-            ((pcm >> 4) & 0x0F) as u8
-        } else {
-            ((pcm >> (seg + 3)) & 0x0F) as u8
-        };
-        let coded = ((seg as u8) << 4) | mantissa;
-        coded ^ mask
-    }
+        ((pcm >> (seg + 3)) & 0x0F) as u8
+    };
+    let coded = ((seg as u8) << 4) | mantissa;
+    coded ^ mask
 }
 
 /// Decode one A-law byte to a 16-bit PCM sample.
