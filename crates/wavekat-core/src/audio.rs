@@ -757,6 +757,16 @@ mod tests {
 
     #[cfg(feature = "resample")]
     #[test]
+    fn streaming_resampler_accessors_report_construction_args() {
+        use crate::StreamingResampler;
+        let r = StreamingResampler::new(8000, 44100, 160).unwrap();
+        assert_eq!(r.source_rate(), 8000);
+        assert_eq!(r.target_rate(), 44100);
+        assert_eq!(r.chunk_size(), 160);
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
     fn streaming_resampler_short_input_chunked_calls() {
         // The exact shape `wavekat-voice`'s RTP receive path drives:
         // repeated 160-sample inputs at 8 kHz → 44.1 kHz. Each call
