@@ -149,11 +149,18 @@ impl AudioFrame<'_> {
             window: WindowFunction::BlackmanHarris2,
         };
 
-        let mut resampler = Async::<f32>::new_sinc(ratio, 1.0, &params, 1024, 1, FixedAsync::Input)
-            .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+        // Match chunk size to input when shorter than the default — avoids
+        // wasting work padding a 160-sample G.711 frame up to 1024 samples.
+        let chunk_size = nbr_input_frames.min(1024);
 
-        // Allocate output buffer with headroom
-        let out_len = (nbr_input_frames as f64 * ratio) as usize + 1024;
+        let mut resampler =
+            Async::<f32>::new_sinc(ratio, 1.0, &params, chunk_size, 1, FixedAsync::Input)
+                .map_err(|e| crate::CoreError::Audio(e.to_string()))?;
+
+        // Ask rubato exactly how much output space `process_all_into_buffer`
+        // needs — it accounts for the per-chunk pad-up, the resampler's
+        // internal delay, and the input-length-times-ratio expected output.
+        let out_len = resampler.process_all_needed_output_len(nbr_input_frames);
         let mut outdata = vec![0.0f32; out_len];
 
         let input_adapter = InterleavedSlice::new(self.samples.as_ref(), 1, nbr_input_frames)
@@ -471,6 +478,54 @@ mod tests {
             (resampled.len() as i64 - expected as i64).unsigned_abs() < tolerance,
             "expected ~{expected} samples, got {}",
             resampled.len()
+        );
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_short_input_upsample_large_ratio() {
+        // The exact case from the wavekat-voice RTP path: a 20 ms G.711 frame
+        // (160 samples @ 8 kHz) upsampled to 44.1 kHz. Before the fix this
+        // returned `InsufficientOutputBufferSize`.
+        let frame = AudioFrame::from_vec(vec![0.0f32; 160], 8000);
+        let resampled = frame.resample(44_100).unwrap();
+        assert_eq!(resampled.sample_rate(), 44_100);
+        let expected = (160.0 * 44_100.0 / 8_000.0) as i64; // 882
+        let actual = resampled.len() as i64;
+        assert!(
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
+        );
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_short_input_upsample_small_ratio() {
+        // 160 samples @ 8 kHz → 16 kHz. Also failed before the fix even
+        // though the ratio is modest, because nbr_input_frames < chunk_size.
+        let frame = AudioFrame::from_vec(vec![0.0f32; 160], 8000);
+        let resampled = frame.resample(16_000).unwrap();
+        assert_eq!(resampled.sample_rate(), 16_000);
+        let expected: i64 = 320;
+        let actual = resampled.len() as i64;
+        assert!(
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
+        );
+    }
+
+    #[cfg(feature = "resample")]
+    #[test]
+    fn resample_single_g711_frame_to_48k() {
+        // The other common device rate: 160 @ 8 kHz → 48 kHz.
+        let frame = AudioFrame::from_vec(vec![0.0f32; 160], 8000);
+        let resampled = frame.resample(48_000).unwrap();
+        assert_eq!(resampled.sample_rate(), 48_000);
+        let expected: i64 = 960;
+        let actual = resampled.len() as i64;
+        assert!(
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
         );
     }
 
