@@ -29,6 +29,8 @@ pub mod audio_io;
 pub mod codec;
 mod error;
 
+#[cfg(feature = "resample")]
+pub use audio::StreamingResampler;
 pub use audio::{AudioFrame, IntoSamples};
 pub use audio_io::{AudioSink, AudioSource};
 pub use error::CoreError;
