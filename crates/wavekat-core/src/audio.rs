@@ -890,9 +890,6 @@ mod tests {
         let spike_threshold = expected_max_delta * 4.0;
 
         let count_spikes = |samples: &[f32], skip: usize, tail: usize| -> usize {
-            if samples.len() < skip + tail {
-                return 0;
-            }
             samples[skip..samples.len() - tail]
                 .windows(2)
                 .filter(|w| (w[1] - w[0]).abs() > spike_threshold)
