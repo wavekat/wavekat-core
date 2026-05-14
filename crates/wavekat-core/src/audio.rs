@@ -491,11 +491,10 @@ mod tests {
         let resampled = frame.resample(44_100).unwrap();
         assert_eq!(resampled.sample_rate(), 44_100);
         let expected = (160.0 * 44_100.0 / 8_000.0) as i64; // 882
-        let tolerance = 50;
+        let actual = resampled.len() as i64;
         assert!(
-            (resampled.len() as i64 - expected).unsigned_abs() < tolerance,
-            "expected ~{expected} samples, got {}",
-            resampled.len()
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
         );
     }
 
@@ -507,12 +506,11 @@ mod tests {
         let frame = AudioFrame::from_vec(vec![0.0f32; 160], 8000);
         let resampled = frame.resample(16_000).unwrap();
         assert_eq!(resampled.sample_rate(), 16_000);
-        let expected = 320;
-        let tolerance = 50;
+        let expected: i64 = 320;
+        let actual = resampled.len() as i64;
         assert!(
-            (resampled.len() as i64 - expected as i64).unsigned_abs() < tolerance,
-            "expected ~{expected} samples, got {}",
-            resampled.len()
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
         );
     }
 
@@ -523,12 +521,11 @@ mod tests {
         let frame = AudioFrame::from_vec(vec![0.0f32; 160], 8000);
         let resampled = frame.resample(48_000).unwrap();
         assert_eq!(resampled.sample_rate(), 48_000);
-        let expected = 960;
-        let tolerance = 50;
+        let expected: i64 = 960;
+        let actual = resampled.len() as i64;
         assert!(
-            (resampled.len() as i64 - expected as i64).unsigned_abs() < tolerance,
-            "expected ~{expected} samples, got {}",
-            resampled.len()
+            (actual - expected).unsigned_abs() < 50,
+            "expected ~{expected} samples, got {actual}"
         );
     }
 
