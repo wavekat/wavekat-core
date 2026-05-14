@@ -25,7 +25,10 @@
 //! ```
 
 mod audio;
+pub mod audio_io;
+pub mod codec;
 mod error;
 
 pub use audio::{AudioFrame, IntoSamples};
+pub use audio_io::{AudioSink, AudioSource};
 pub use error::CoreError;

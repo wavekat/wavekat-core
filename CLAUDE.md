@@ -13,6 +13,8 @@ Provide the common audio primitives so that all WaveKat crates speak the same la
 - Common constants (sample rates, format standards)
 - Shared error types (only when genuinely shared)
 - Format normalisation operations on `AudioFrame` (i16→f32, sample-rate conversion) — gated behind optional features
+- The `AudioSource` / `AudioSink` traits — the producer/consumer seam any audio pipeline composes against. Concrete impls (cpal mic, AI agent, RTP receive) live in their consuming crates; the trait shape lives here so they all interoperate.
+- Telephony codecs (`codec::g711`: PCMU + PCMA). Codecs are consumer-layer for `wavekat-sip` (which stays codec-agnostic), but multiple downstream crates need them — keep one canonical implementation here.
 
 ## What Does NOT Belong Here
 
@@ -59,7 +61,11 @@ wavekat-core/
 │   └── wavekat-core/           # library crate
 │       ├── src/
 │       │   ├── lib.rs          # public API, re-exports
-│       │   ├── audio.rs        # AudioFrame, IntoSamples, resample
+│       │   ├── audio.rs        # AudioFrame, IntoSamples, resample, wav
+│       │   ├── audio_io.rs     # AudioSource / AudioSink traits
+│       │   ├── codec/          # telephony codecs (g711 today)
+│       │   │   ├── mod.rs
+│       │   │   └── g711.rs     # PCMU + PCMA encode/decode, G711Codec enum
 │       │   └── error.rs        # CoreError
 │       └── Cargo.toml
 ├── docs/                       # design documents
