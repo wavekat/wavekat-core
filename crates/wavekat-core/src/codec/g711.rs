@@ -260,4 +260,152 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn ulaw_decode_is_a_fixed_point_for_every_codeword() {
+        // The right invariant: a decoded sample is the canonical form
+        // of its codeword, so decode(encode(decode(b))) must equal
+        // decode(b) for every codeword. The weaker variant
+        // (encode→decode→encode == encode for every i16) fails near
+        // zero because μ-law has separate +0/-0 codewords that
+        // collapse to the same decoded sample; that's a property of
+        // the codec, not a bug.
+        for b in 0u8..=255 {
+            let mid = ulaw_to_linear(b);
+            let again = ulaw_to_linear(linear_to_ulaw(mid));
+            assert_eq!(again, mid, "μ-law decode not fixed-point at {b:#x}");
+        }
+    }
+
+    #[test]
+    fn alaw_decode_is_a_fixed_point_for_every_codeword() {
+        for b in 0u8..=255 {
+            let mid = alaw_to_linear(b);
+            let again = alaw_to_linear(linear_to_alaw(mid));
+            assert_eq!(again, mid, "A-law decode not fixed-point at {b:#x}");
+        }
+    }
+
+    #[test]
+    fn ulaw_decode_covers_full_codeword_space_without_panic() {
+        // 256 possible codewords. Decoding all of them must not panic
+        // and must stay in i16 range.
+        for b in 0u8..=255 {
+            let _ = ulaw_to_linear(b);
+        }
+    }
+
+    #[test]
+    fn alaw_decode_covers_full_codeword_space_without_panic() {
+        for b in 0u8..=255 {
+            let _ = alaw_to_linear(b);
+        }
+    }
+
+    #[test]
+    fn ulaw_zero_is_distinct_from_full_scale() {
+        // Sanity: a non-trivial codec maps 0 and i16::MAX to different
+        // bytes. Guards against a stub impl that returns a constant.
+        assert_ne!(linear_to_ulaw(0), linear_to_ulaw(i16::MAX));
+        assert_ne!(linear_to_ulaw(0), linear_to_ulaw(i16::MIN));
+    }
+
+    #[test]
+    fn alaw_zero_is_distinct_from_full_scale() {
+        assert_ne!(linear_to_alaw(0), linear_to_alaw(i16::MAX));
+        assert_ne!(linear_to_alaw(0), linear_to_alaw(i16::MIN));
+    }
+
+    #[test]
+    fn pcmu_and_pcma_produce_different_bytes_for_the_same_input() {
+        // Guards against accidentally aliasing the two paths (e.g. a
+        // typo wiring Pcma to linear_to_ulaw). PCMU and PCMA share the
+        // shape but pick different quantisation tables and silence
+        // codewords; they should not match on a non-trivial sample.
+        let s = 12345i16;
+        assert_ne!(linear_to_ulaw(s), linear_to_alaw(s));
+    }
+
+    #[test]
+    fn codec_enum_dispatches_to_the_right_path() {
+        // Crossing the enum boundary must end up at the matching
+        // function — not swapped, not aliased.
+        let pcm = vec![1000i16, -2000, 3000];
+
+        let mut a = Vec::new();
+        G711Codec::Pcmu.encode(&pcm, &mut a);
+        let mut b = Vec::new();
+        for &s in &pcm {
+            b.push(linear_to_ulaw(s));
+        }
+        assert_eq!(a, b);
+
+        let mut c = Vec::new();
+        G711Codec::Pcma.encode(&pcm, &mut c);
+        let mut d = Vec::new();
+        for &s in &pcm {
+            d.push(linear_to_alaw(s));
+        }
+        assert_eq!(c, d);
+    }
+
+    #[test]
+    fn slice_encode_then_decode_recovers_signal_within_codec_drift() {
+        // Twenty-millisecond G.711 frame of a small sine — encode,
+        // decode, and compare against the input. The codec is lossy
+        // (log-PCM quantisation), so we allow a per-sample drift, but
+        // the average error must be small for an "audible" path.
+        let samples: Vec<i16> = (0..G711_FRAME_SAMPLES)
+            .map(|i| {
+                let t = i as f32 / G711_SAMPLE_RATE as f32;
+                ((t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 8000.0) as i16
+            })
+            .collect();
+
+        for codec in [G711Codec::Pcmu, G711Codec::Pcma] {
+            let mut encoded = Vec::new();
+            codec.encode(&samples, &mut encoded);
+            assert_eq!(encoded.len(), G711_FRAME_SAMPLES);
+
+            let mut decoded = Vec::new();
+            codec.decode(&encoded, &mut decoded);
+            assert_eq!(decoded.len(), G711_FRAME_SAMPLES);
+
+            let mean_abs_error: f64 = samples
+                .iter()
+                .zip(decoded.iter())
+                .map(|(a, b)| (*a as i32 - *b as i32).abs() as f64)
+                .sum::<f64>()
+                / samples.len() as f64;
+            // 200 i16 units ≈ 0.6% of full scale — comfortably below
+            // perceptible degradation for telephony.
+            assert!(
+                mean_abs_error < 200.0,
+                "{codec:?}: mean abs error {mean_abs_error} too high"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_appends_rather_than_replacing() {
+        // The slice-level encode/decode take `&mut Vec<…>` and append.
+        // Verifying that explicitly so callers can reuse buffers
+        // across RTP packets without per-packet alloc.
+        let mut buf = vec![0xFFu8, 0xFEu8];
+        let pcm = vec![0i16; 3];
+        G711Codec::Pcmu.encode(&pcm, &mut buf);
+        assert_eq!(buf.len(), 5);
+        assert_eq!(&buf[..2], &[0xFF, 0xFE]);
+    }
+
+    #[test]
+    fn payload_type_constants_match_rfc3551() {
+        // RFC 3551 §6 pins PCMU=0 and PCMA=8. Hard-coding these
+        // numbers in tests protects against a casual rename that would
+        // silently break SDP negotiation against any real PBX.
+        assert_eq!(PCMU_PAYLOAD_TYPE, 0);
+        assert_eq!(PCMA_PAYLOAD_TYPE, 8);
+        assert_eq!(G711_SAMPLE_RATE, 8000);
+        assert_eq!(G711_FRAME_SAMPLES, 160);
+    }
 }
