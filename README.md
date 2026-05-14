@@ -70,10 +70,10 @@ Your audio (any format)
 ## Audio Sources and Sinks
 
 `AudioSource` and `AudioSink` are the producer/consumer seam every WaveKat
-audio pipeline composes against. Concrete impls live in their consuming
-crates (cpal mic/speaker in `wavekat-voice`, an agent-backed source in
-`wavekat-agent`, …) so adding a new producer or consumer is "implement
-the trait" rather than "rewrite the RTP path."
+audio pipeline composes against. Concrete impls (cpal-backed mic/speaker,
+agent-driven sources, RTP-driven sinks, …) live in the consuming crates so
+that adding a new producer or consumer is "implement the trait" rather than
+"rewrite the RTP path."
 
 ```rust
 use wavekat_core::{AudioFrame, AudioSink, AudioSource};
