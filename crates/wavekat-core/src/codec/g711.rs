@@ -127,11 +127,15 @@ pub fn alaw_to_linear(alaw: u8) -> i16 {
 /// version we pass around in code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum G711Codec {
+    /// μ-law (G.711U) — North America / Japan default, RTP payload type `0`.
     Pcmu,
+    /// A-law (G.711A) — Europe / rest-of-world default, RTP payload type `8`.
     Pcma,
 }
 
 impl G711Codec {
+    /// The static RTP payload-type number for this codec — `0` for PCMU,
+    /// `8` for PCMA (RFC 3551 §6).
     pub fn payload_type(self) -> u8 {
         match self {
             G711Codec::Pcmu => PCMU_PAYLOAD_TYPE,

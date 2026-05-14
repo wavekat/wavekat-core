@@ -19,6 +19,8 @@ Shared types for the WaveKat audio processing ecosystem.
 |------|-------------|
 | `AudioFrame` | Audio samples with sample rate, accepts `i16` and `f32` in slice, Vec, or array form |
 | `IntoSamples` | Trait for transparent sample format conversion |
+| `AudioSource` / `AudioSink` | Async producer/consumer traits — the seam every WaveKat audio pipeline composes against |
+| `codec::g711` | G.711 μ-law (PCMU) and A-law (PCMA) — telephony codecs for SIP/RTP |
 
 ## Quick Start
 
@@ -63,6 +65,63 @@ Your audio (any format)
         +---> wavekat-vad
         +---> wavekat-turn
         +---> wavekat-asr (future)
+```
+
+## Audio Sources and Sinks
+
+`AudioSource` and `AudioSink` are the producer/consumer seam every WaveKat
+audio pipeline composes against. Concrete impls live in their consuming
+crates (cpal mic/speaker in `wavekat-voice`, an agent-backed source in
+`wavekat-agent`, …) so adding a new producer or consumer is "implement
+the trait" rather than "rewrite the RTP path."
+
+```rust
+use wavekat_core::{AudioFrame, AudioSink, AudioSource};
+
+struct FileSource { /* … */ }
+struct RtpSink    { /* … */ }
+
+impl AudioSource for FileSource {
+    async fn next_frame(&mut self) -> Option<AudioFrame<'static>> {
+        // None signals end-of-stream; callers stop draining.
+        todo!()
+    }
+}
+
+impl AudioSink for RtpSink {
+    async fn write_frame(&mut self, frame: AudioFrame<'_>) {
+        // Implementations may drop on backpressure rather than block —
+        // stalling the RTP path is worse than dropping a frame.
+        todo!()
+    }
+}
+```
+
+## G.711 Telephony Codec
+
+PCMU (μ-law) and PCMA (A-law) — the two static codecs every SIP endpoint
+speaks. One 16-bit PCM sample ↔ one 8-bit codeword; a 20 ms RTP frame at
+8 kHz is 160 samples / 160 bytes.
+
+```rust
+use wavekat_core::codec::g711::{
+    G711Codec, G711_FRAME_SAMPLES, G711_SAMPLE_RATE,
+};
+
+// Resolve the codec from a SIP/RTP payload type.
+let codec = G711Codec::from_payload_type(0).unwrap(); // 0 = PCMU, 8 = PCMA
+
+// Encode a 20 ms frame of PCM into G.711 bytes.
+let pcm: Vec<i16> = vec![0; G711_FRAME_SAMPLES];
+let mut bytes = Vec::with_capacity(G711_FRAME_SAMPLES);
+codec.encode(&pcm, &mut bytes);
+assert_eq!(bytes.len(), G711_FRAME_SAMPLES);
+
+// Decode the other direction.
+let mut decoded = Vec::with_capacity(bytes.len());
+codec.decode(&bytes, &mut decoded);
+
+assert_eq!(G711_SAMPLE_RATE, 8000);
 ```
 
 ## Optional Features
