@@ -165,6 +165,15 @@ assert_eq!(frame.sample_rate(), 24000);
 let same = frame.resample(24000)?;
 ```
 
+## Stars
+
+<a href="https://stars.wavekat.com/wavekat/wavekat-core">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://stars.wavekat.com/wavekat/wavekat-core/chart.svg?theme=dark">
+    <img alt="wavekat/wavekat-core stars" src="https://stars.wavekat.com/wavekat/wavekat-core/chart.svg?theme=light">
+  </picture>
+</a>
+
 ## License
 
 Licensed under [Apache 2.0](LICENSE).
