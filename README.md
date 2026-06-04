@@ -8,7 +8,7 @@
 [![docs.rs](https://docs.rs/wavekat-core/badge.svg)](https://docs.rs/wavekat-core)
 [![codecov](https://codecov.io/gh/wavekat/wavekat-core/branch/main/graph/badge.svg)](https://codecov.io/gh/wavekat/wavekat-core)
 
-Shared types for the WaveKat audio processing ecosystem.
+Shared types for the [WaveKat](https://wavekat.com) audio processing ecosystem.
 
 > [!WARNING]
 > Early development. API may change.
@@ -164,6 +164,12 @@ assert_eq!(frame.sample_rate(), 24000);
 // No-op if already at the target rate
 let same = frame.resample(24000)?;
 ```
+
+## About WaveKat
+
+`wavekat-core` is part of WaveKat, an open-source ecosystem of Rust crates for building real-time voice pipelines. It provides the shared audio primitives — frames, sample conversion, and telephony codecs — that the other crates build on.
+
+See [wavekat.com](https://wavekat.com) for the full project.
 
 ## Stars
 
