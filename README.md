@@ -165,6 +165,33 @@ assert_eq!(frame.sample_rate(), 24000);
 let same = frame.resample(24000)?;
 ```
 
+### `opus`
+
+Adds the Opus codec (wideband voice profile: 16 kHz mono, in-band FEC) via safe bindings to the reference C `libopus`. Off by default because it introduces a C build dependency (vendored `libopus`, built with `cmake`); the crate stays pure-Rust without it.
+
+```sh
+cargo add wavekat-core --features opus
+```
+
+```rust
+use wavekat_core::codec::opus::{OpusDecoder, OpusEncoder, OPUS_FRAME_SAMPLES};
+
+let mut encoder = OpusEncoder::new()?;
+let mut decoder = OpusDecoder::new()?;
+
+// One 20 ms frame at 16 kHz in, one Opus packet out
+let pcm = vec![0i16; OPUS_FRAME_SAMPLES];
+let mut packet = Vec::new();
+encoder.encode(&pcm, &mut packet)?;
+
+let mut decoded = Vec::new();
+decoder.decode(&packet, &mut decoded)?;
+
+// Loss recovery, driven by the RTP receive path:
+// decoder.decode_fec(&next_packet, &mut out)?  — recover a lost frame
+// decoder.conceal(&mut out)?                   — extrapolate when nothing arrived
+```
+
 ## About WaveKat
 
 `wavekat-core` is part of WaveKat, an open-source ecosystem of Rust crates for building real-time voice pipelines. It provides the shared audio primitives — frames, sample conversion, and telephony codecs — that the other crates build on.
