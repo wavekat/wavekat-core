@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.13](https://github.com/wavekat/wavekat-core/compare/v0.0.12...v0.0.13) - 2026-07-03
+
+### Added
+
+- add Opus codec behind an opus feature ([#30](https://github.com/wavekat/wavekat-core/pull/30))
+
 ## [0.0.12](https://github.com/wavekat/wavekat-core/compare/v0.0.11...v0.0.12) - 2026-06-04
 
 ### Other
