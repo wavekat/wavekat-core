@@ -29,8 +29,12 @@ sample rate.
 pub fn from_wav(path: impl AsRef<Path>) -> Result<AudioFrame<'static>, hound::Error>
 ```
 
-Reads a mono WAV file and returns an owned `AudioFrame`. Accepts both f32 and
-i16 files; i16 samples are normalised to `[-1.0, 1.0]` (divided by 32768).
+Reads a mono WAV file and returns an owned `AudioFrame`. Accepts f32, i16,
+and G.711 files (format tag 6 = A-law, 7 = μ-law — what telephony tooling
+emits); i16 samples are normalised to `[-1.0, 1.0]` (divided by 32768), and
+G.711 bytes are expanded to 16-bit PCM via `codec::g711` first, then
+normalised the same way. hound handles the PCM/float parsing; the G.711 path
+is a small built-in RIFF walk, since hound only parses integer and float PCM.
 
 ## Example
 
