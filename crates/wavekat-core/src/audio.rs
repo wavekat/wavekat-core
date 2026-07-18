@@ -390,8 +390,9 @@ impl AudioFrame<'_> {
 impl AudioFrame<'static> {
     /// Read a mono WAV file and return an owned `AudioFrame`.
     ///
-    /// Accepts both f32 and i16 WAV files. i16 samples are normalised to
-    /// `[-1.0, 1.0]` (divided by 32768).
+    /// Accepts f32, i16, and G.711 (A-law / μ-law) WAV files. i16 samples
+    /// are normalised to `[-1.0, 1.0]` (divided by 32768); G.711 bytes are
+    /// expanded to 16-bit PCM first, then normalised the same way.
     ///
     /// # Example
     ///
@@ -402,7 +403,14 @@ impl AudioFrame<'static> {
     /// println!("{} Hz, {} samples", frame.sample_rate(), frame.len());
     /// ```
     pub fn from_wav(path: impl AsRef<std::path::Path>) -> Result<Self, crate::CoreError> {
-        let mut reader = hound::WavReader::open(path)?;
+        let bytes = std::fs::read(path)?;
+        // hound only parses integer-PCM and float WAVs, but telephony
+        // tooling commonly emits G.711 WAVs (format tag 6 = A-law,
+        // 7 = μ-law) — sniff the fmt chunk and decode those ourselves.
+        if let Some((samples, sample_rate)) = g711_wav_samples(&bytes)? {
+            return Ok(AudioFrame::from_vec(samples, sample_rate));
+        }
+        let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))?;
         let spec = reader.spec();
         let sample_rate = spec.sample_rate;
         let samples: Vec<f32> = match spec.sample_format {
@@ -414,6 +422,58 @@ impl AudioFrame<'static> {
         };
         Ok(AudioFrame::from_vec(samples, sample_rate))
     }
+}
+
+/// WAVE format tags for the two G.711 companding laws (RFC 2361).
+#[cfg(feature = "wav")]
+const WAVE_FORMAT_ALAW: u16 = 0x0006;
+#[cfg(feature = "wav")]
+const WAVE_FORMAT_MULAW: u16 = 0x0007;
+
+/// Return the payload of the first RIFF chunk named `id`, or `None` if the
+/// bytes are not a RIFF/WAVE file or the chunk is absent. A declared chunk
+/// size that runs past the end of the file is clamped to the bytes present.
+#[cfg(feature = "wav")]
+fn riff_chunk<'a>(bytes: &'a [u8], id: &[u8; 4]) -> Option<&'a [u8]> {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut pos = 12;
+    while pos + 8 <= bytes.len() {
+        let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().ok()?) as usize;
+        let start = pos + 8;
+        if &bytes[pos..pos + 4] == id {
+            return Some(&bytes[start..start.checked_add(size)?.min(bytes.len())]);
+        }
+        // Chunks are word-aligned: an odd size is followed by a pad byte.
+        pos = start.checked_add(size)?.checked_add(size & 1)?;
+    }
+    None
+}
+
+/// If `bytes` are a G.711 WAV (format tag 6 or 7), decode the data chunk to
+/// normalised f32 samples and return them with the sample rate. Returns
+/// `Ok(None)` for anything that isn't G.711 WAV — including non-RIFF bytes —
+/// so the caller can fall through to hound (whose parse errors are more
+/// descriptive than anything this sniffer could produce).
+#[cfg(feature = "wav")]
+fn g711_wav_samples(bytes: &[u8]) -> Result<Option<(Vec<f32>, u32)>, crate::CoreError> {
+    let Some(fmt) = riff_chunk(bytes, b"fmt ") else {
+        return Ok(None);
+    };
+    if fmt.len() < 16 {
+        return Ok(None);
+    }
+    let decode: fn(u8) -> i16 = match u16::from_le_bytes([fmt[0], fmt[1]]) {
+        WAVE_FORMAT_ALAW => crate::codec::g711::alaw_to_linear,
+        WAVE_FORMAT_MULAW => crate::codec::g711::ulaw_to_linear,
+        _ => return Ok(None),
+    };
+    let sample_rate = u32::from_le_bytes([fmt[4], fmt[5], fmt[6], fmt[7]]);
+    let data = riff_chunk(bytes, b"data")
+        .ok_or_else(|| crate::CoreError::Audio("G.711 WAV has no data chunk".to_string()))?;
+    let samples = data.iter().map(|&b| decode(b) as f32 / 32768.0).collect();
+    Ok(Some((samples, sample_rate)))
 }
 
 /// Trait for types that can be converted into audio samples.
@@ -559,6 +619,117 @@ mod tests {
         for (a, b) in original.samples().iter().zip(loaded.samples()) {
             assert!((a - b).abs() < 1e-6, "sample mismatch: {a} vs {b}");
         }
+    }
+
+    /// Build a G.711 WAV the way telephony encoders do: 18-byte fmt chunk
+    /// (cbSize = 0) followed by a `fact` chunk, so reading also exercises
+    /// unknown-chunk skipping in the RIFF walker.
+    #[cfg(feature = "wav")]
+    fn write_g711_wav(path: &std::path::Path, format_tag: u16, sample_rate: u32, data: &[u8]) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // patched below
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(&format_tag.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes()); // byte rate: 1 byte/sample
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // block align
+        bytes.extend_from_slice(&8u16.to_le_bytes()); // bits per sample
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // cbSize
+        bytes.extend_from_slice(b"fact");
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+        if data.len() % 2 == 1 {
+            bytes.push(0); // RIFF chunks are word-aligned
+        }
+        let riff_size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn wav_read_g711_ulaw() {
+        use crate::codec::g711;
+        let pcm: &[i16] = &[0, 1000, -1000, i16::MAX, i16::MIN + 1];
+        let encoded: Vec<u8> = pcm.iter().map(|&s| g711::linear_to_ulaw(s)).collect();
+        let path = std::env::temp_dir().join("wavekat_test_ulaw.wav");
+        write_g711_wav(&path, 0x0007, 8000, &encoded);
+
+        let frame = AudioFrame::from_wav(&path).unwrap();
+        assert_eq!(frame.sample_rate(), 8000);
+        assert_eq!(frame.len(), pcm.len());
+        for (got, &byte) in frame.samples().iter().zip(&encoded) {
+            let want = g711::ulaw_to_linear(byte) as f32 / 32768.0;
+            assert!(
+                (got - want).abs() < 1e-6,
+                "sample mismatch: {got} vs {want}"
+            );
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn wav_read_g711_alaw() {
+        use crate::codec::g711;
+        let pcm: &[i16] = &[0, 1000, -1000, i16::MAX, i16::MIN + 1];
+        let encoded: Vec<u8> = pcm.iter().map(|&s| g711::linear_to_alaw(s)).collect();
+        let path = std::env::temp_dir().join("wavekat_test_alaw.wav");
+        write_g711_wav(&path, 0x0006, 8000, &encoded);
+
+        let frame = AudioFrame::from_wav(&path).unwrap();
+        assert_eq!(frame.sample_rate(), 8000);
+        assert_eq!(frame.len(), pcm.len());
+        for (got, &byte) in frame.samples().iter().zip(&encoded) {
+            let want = g711::alaw_to_linear(byte) as f32 / 32768.0;
+            assert!(
+                (got - want).abs() < 1e-6,
+                "sample mismatch: {got} vs {want}"
+            );
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn wav_read_g711_missing_data_chunk_errors() {
+        // fmt says μ-law but there is no data chunk at all.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&30u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&18u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0007u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        let path = std::env::temp_dir().join("wavekat_test_ulaw_nodata.wav");
+        std::fs::write(&path, bytes).unwrap();
+
+        let err = AudioFrame::from_wav(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("data chunk"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn wav_read_non_riff_bytes_still_error() {
+        // Not a WAV at all: the G.711 sniffer must pass it through to
+        // hound, which rejects it — not panic or return silence.
+        let path = std::env::temp_dir().join("wavekat_test_not_a_wav.wav");
+        std::fs::write(&path, b"these bytes are not a RIFF WAV").unwrap();
+        assert!(AudioFrame::from_wav(&path).is_err());
     }
 
     #[test]
