@@ -724,6 +724,26 @@ mod tests {
 
     #[cfg(feature = "wav")]
     #[test]
+    fn wav_read_truncated_fmt_chunk_falls_through_to_hound() {
+        // A fmt chunk shorter than the 16-byte minimum can't carry a format
+        // tag — the sniffer must not decode it as G.711, and hound rejects it.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&20u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0007u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        let path = std::env::temp_dir().join("wavekat_test_short_fmt.wav");
+        std::fs::write(&path, bytes).unwrap();
+
+        assert!(AudioFrame::from_wav(&path).is_err());
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
     fn wav_read_non_riff_bytes_still_error() {
         // Not a WAV at all: the G.711 sniffer must pass it through to
         // hound, which rejects it — not panic or return silence.
