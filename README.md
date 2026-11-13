@@ -21,6 +21,7 @@ Shared types for the [WaveKat](https://wavekat.com) audio processing ecosystem.
 | `IntoSamples` | Trait for transparent sample format conversion |
 | `AudioSource` / `AudioSink` | Async producer/consumer traits — the seam every WaveKat audio pipeline composes against |
 | `codec::g711` | G.711 μ-law (PCMU) and A-law (PCMA) — telephony codecs for SIP/RTP |
+| `codec::g722` | G.722 — wideband (16 kHz) telephony codec at 64 kbit/s, pure Rust |
 
 ## Quick Start
 
@@ -122,6 +123,38 @@ let mut decoded = Vec::with_capacity(bytes.len());
 codec.decode(&bytes, &mut decoded);
 
 assert_eq!(G711_SAMPLE_RATE, 8000);
+```
+
+## G.722 Wideband Codec
+
+G.722 carries 16 kHz speech in the same 64 kbit/s as G.711 — the "HD
+voice" codec most SIP providers and desk phones speak. Pure Rust, no
+feature flag. Two PCM samples ↔ one byte; a 20 ms RTP frame is
+320 samples / 160 bytes. The coder is stateful: keep one encoder and
+one decoder per stream.
+
+```rust
+use wavekat_core::codec::g722::{
+    G722Decoder, G722Encoder, G722_FRAME_BYTES, G722_FRAME_SAMPLES,
+    G722_RTP_CLOCK_RATE,
+};
+
+let mut encoder = G722Encoder::new();
+let mut decoder = G722Decoder::new();
+
+// One 20 ms frame at 16 kHz in, 160 bytes out.
+let pcm = vec![0i16; G722_FRAME_SAMPLES];
+let mut bytes = Vec::new();
+encoder.encode(&pcm, &mut bytes).unwrap();
+assert_eq!(bytes.len(), G722_FRAME_BYTES);
+
+let mut decoded = Vec::new();
+decoder.decode(&bytes, &mut decoded);
+assert_eq!(decoded.len(), G722_FRAME_SAMPLES);
+
+// RFC 3551 quirk: the RTP clock is 8000 although the audio is 16 kHz,
+// so the RTP timestamp advances by 160 per frame.
+assert_eq!(G722_RTP_CLOCK_RATE, 8000);
 ```
 
 ## Optional Features

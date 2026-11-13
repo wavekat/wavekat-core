@@ -2,8 +2,9 @@
 //!
 //! Each codec lives in a submodule so the public surface stays
 //! deliberately granular: a consumer that only needs G.711 imports
-//! `wavekat_core::codec::g711`. Future additions (iLBC, …) live beside
-//! them and stay independently selectable.
+//! `wavekat_core::codec::g711`, one that wants wideband on a plain SIP
+//! line imports `wavekat_core::codec::g722`. Future additions (iLBC, …)
+//! live beside them and stay independently selectable.
 //!
 //! Opus is gated behind the `opus` cargo feature because it pulls a C
 //! build dependency (vendored `libopus` via `audiopus_sys`); the crate
@@ -12,6 +13,7 @@
 //! consumers that negotiate their codec per call.
 
 pub mod g711;
+pub mod g722;
 #[cfg(feature = "opus")]
 pub mod opus;
 
@@ -19,56 +21,67 @@ pub mod opus;
 pub use seam::{Decoder, Encoder};
 
 /// The per-call codec seam: one enum per direction, dispatching to the
-/// stateless G.711 tables or a stateful Opus coder. Split from the
+/// stateless G.711 tables or a stateful G.722 or Opus coder. Split from the
 /// submodules so `g711`/`opus` stay usable standalone.
 #[cfg(feature = "opus")]
 mod seam {
     use super::g711::{G711Codec, G711_FRAME_SAMPLES, G711_SAMPLE_RATE};
+    use super::g722::{G722Decoder, G722Encoder, G722_FRAME_SAMPLES, G722_PCM_SAMPLE_RATE};
     use super::opus::{OpusDecoder, OpusEncoder, OPUS_FRAME_SAMPLES, OPUS_PCM_SAMPLE_RATE};
     use crate::CoreError;
 
     /// The encode half of a negotiated call codec.
     ///
     /// G.711 is a stateless table lookup (the enum just carries the
-    /// μ-law/A-law choice); Opus owns a heap-backed encoder with
-    /// inter-frame state. Either way: feed one 20 ms frame at
+    /// μ-law/A-law choice); G.722 keeps its predictor state inline;
+    /// Opus owns a heap-backed encoder with inter-frame state. In every
+    /// case: feed one 20 ms frame at
     /// [`pcm_sample_rate`](Self::pcm_sample_rate) per call, in order.
+    // G.722's predictor state is a few hundred bytes held inline; one
+    // coder lives for a whole call, so boxing it would buy nothing.
+    #[allow(clippy::large_enum_variant)]
     pub enum Encoder {
         /// PCMU or PCMA.
         G711(G711Codec),
+        /// G.722, wideband at 64 kbit/s.
+        G722(G722Encoder),
         /// Opus, wideband voice profile.
         Opus(OpusEncoder),
     }
 
     impl Encoder {
         /// The PCM rate this encoder consumes: 8 kHz for G.711, 16 kHz
-        /// for Opus. Resample the microphone to this, not to a global
+        /// for G.722 and Opus. Resample the microphone to this, not to a global
         /// constant.
         pub fn pcm_sample_rate(&self) -> u32 {
             match self {
                 Encoder::G711(_) => G711_SAMPLE_RATE,
+                Encoder::G722(_) => G722_PCM_SAMPLE_RATE,
                 Encoder::Opus(_) => OPUS_PCM_SAMPLE_RATE,
             }
         }
 
         /// Samples in one 20 ms frame at [`pcm_sample_rate`](Self::pcm_sample_rate):
-        /// 160 for G.711, 320 for Opus.
+        /// 160 for G.711, 320 for G.722 and Opus.
         pub fn frame_samples(&self) -> usize {
             match self {
                 Encoder::G711(_) => G711_FRAME_SAMPLES,
+                Encoder::G722(_) => G722_FRAME_SAMPLES,
                 Encoder::Opus(_) => OPUS_FRAME_SAMPLES,
             }
         }
 
         /// Encode one 20 ms frame, appending the payload bytes to `out`
-        /// and returning the payload length. G.711 cannot fail; Opus
-        /// errors surface (wrong frame length, libopus failure).
+        /// and returning the payload length. G.711 cannot fail; G.722
+        /// refuses an odd sample count; Opus errors surface (wrong
+        /// frame length, libopus failure).
         pub fn encode(&mut self, pcm: &[i16], out: &mut Vec<u8>) -> Result<usize, CoreError> {
             match self {
                 Encoder::G711(codec) => {
                     codec.encode(pcm, out);
                     Ok(pcm.len())
                 }
+                Encoder::G722(enc) => enc.encode(pcm, out),
                 Encoder::Opus(enc) => enc.encode(pcm, out),
             }
         }
@@ -77,23 +90,29 @@ mod seam {
     /// The decode half of a negotiated call codec.
     ///
     /// The loss-recovery calls are uniform so a receive loop can drive
-    /// them without codec branches: for G.711 they are no-ops (append
-    /// nothing, return 0) because G.711 carries no redundancy and its
-    /// historical loss behavior — silence by absence — is the correct
-    /// one to keep.
+    /// them without codec branches: for G.711 and G.722 they are no-ops
+    /// (append nothing, return 0) because neither carries redundancy and
+    /// the historical loss behavior — silence by absence — is the
+    /// correct one to keep.
+    // G.722's predictor state is a few hundred bytes held inline; one
+    // coder lives for a whole call, so boxing it would buy nothing.
+    #[allow(clippy::large_enum_variant)]
     pub enum Decoder {
         /// PCMU or PCMA.
         G711(G711Codec),
+        /// G.722, wideband at 64 kbit/s.
+        G722(G722Decoder),
         /// Opus, with in-band FEC recovery and PLC.
         Opus(OpusDecoder),
     }
 
     impl Decoder {
         /// The PCM rate decoded frames come out at: 8 kHz for G.711,
-        /// 16 kHz for Opus.
+        /// 16 kHz for G.722 and Opus.
         pub fn pcm_sample_rate(&self) -> u32 {
             match self {
                 Decoder::G711(_) => G711_SAMPLE_RATE,
+                Decoder::G722(_) => G722_PCM_SAMPLE_RATE,
                 Decoder::Opus(_) => OPUS_PCM_SAMPLE_RATE,
             }
         }
@@ -107,6 +126,7 @@ mod seam {
                     codec.decode(payload, out);
                     Ok(payload.len())
                 }
+                Decoder::G722(dec) => Ok(dec.decode(payload, out)),
                 Decoder::Opus(dec) => dec.decode(payload, out),
             }
         }
@@ -121,7 +141,7 @@ mod seam {
             out: &mut Vec<i16>,
         ) -> Result<usize, CoreError> {
             match self {
-                Decoder::G711(_) => Ok(0),
+                Decoder::G711(_) | Decoder::G722(_) => Ok(0),
                 Decoder::Opus(dec) => dec.decode_fec(next_payload, out),
             }
         }
@@ -131,7 +151,7 @@ mod seam {
         /// G.711 appends nothing — absence already sounds like silence.
         pub fn conceal(&mut self, out: &mut Vec<i16>) -> Result<usize, CoreError> {
             match self {
-                Decoder::G711(_) => Ok(0),
+                Decoder::G711(_) | Decoder::G722(_) => Ok(0),
                 Decoder::Opus(dec) => dec.conceal(out),
             }
         }
@@ -183,6 +203,29 @@ mod seam {
                 Decoder::Opus(OpusDecoder::new().unwrap()).pcm_sample_rate(),
                 16_000
             );
+        }
+
+        #[test]
+        fn g722_seam_matches_direct_codec() {
+            let pcm = tone(G722_FRAME_SAMPLES, G722_PCM_SAMPLE_RATE);
+            let mut enc = Encoder::G722(G722Encoder::new());
+            assert_eq!(enc.pcm_sample_rate(), 16_000);
+            assert_eq!(enc.frame_samples(), 320);
+            let mut via_seam = Vec::new();
+            assert_eq!(enc.encode(&pcm, &mut via_seam).unwrap(), 160);
+            let mut direct = Vec::new();
+            G722Encoder::new().encode(&pcm, &mut direct).unwrap();
+            assert_eq!(via_seam, direct);
+            assert!(enc.encode(&pcm[..319], &mut via_seam).is_err());
+
+            let mut dec = Decoder::G722(G722Decoder::new());
+            assert_eq!(dec.pcm_sample_rate(), 16_000);
+            let mut out = Vec::new();
+            assert_eq!(dec.decode(&direct, &mut out).unwrap(), G722_FRAME_SAMPLES);
+            // No redundancy to recover from: loss stays silence.
+            assert_eq!(dec.recover_lost(&direct, &mut out).unwrap(), 0);
+            assert_eq!(dec.conceal(&mut out).unwrap(), 0);
+            assert_eq!(out.len(), G722_FRAME_SAMPLES);
         }
 
         #[test]
