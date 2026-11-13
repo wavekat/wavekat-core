@@ -1,0 +1,4 @@
+[env]
+# audiopus_sys (libopus, behind the `opus` feature) ships a CMakeLists that
+# CMake 4 rejects without this.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
