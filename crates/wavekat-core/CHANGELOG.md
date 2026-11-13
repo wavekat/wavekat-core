@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15](https://github.com/wavekat/wavekat-core/compare/v0.0.14...v0.0.15) - 2026-11-13
+
+### Added
+
+- add G.722 wideband codec ([#34](https://github.com/wavekat/wavekat-core/pull/34))
+
 ## [0.0.14](https://github.com/wavekat/wavekat-core/compare/v0.0.13...v0.0.14) - 2026-07-18
 
 ### Added
